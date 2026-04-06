@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Block Blast Clone JS</title>
+    <style>
+        :root {
+            --bg-color: #121213;
+            --grid-bg: #1e1e1e;
+            --cell-border: #333;
+            --block-color: #4facfe;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+        }
+        .header { margin: 20px; text-align: center; }
+        #score { font-size: 48px; font-weight: bold; color: #00f2fe; }
+        
+        #game-container { position: relative; }
+        canvas {
+            background: var(--grid-bg);
+            border: 5px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        #pieces-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            height: 120px;
+        }
+
+        .piece-canvas {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            cursor: grab;
+        }
+        .piece-canvas:active { cursor: grabbing; }
+        .selected { border: 2px solid #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>SKOR</div>
+        <div id="score">0</div>
+    </div>
+
+    <div id="game-container">
+        <canvas id="mainBoard" width="400" height="400"></canvas>
+    </div>
+
+    <div id="pieces-container">
+        <canvas id="p0" class="piece-canvas" width="100" height="100"></canvas>
+        <canvas id="p1" class="piece-canvas" width="100" height="100"></canvas>
+        <canvas id="p2" class="piece-canvas" width="100" height="100"></canvas>
+    </div>
+
+<script>
+    const canvas = document.getElementById('mainBoard');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score');
+    
+    const ROWS = 8;
+    const COLS = 8;
+    const CELL_SIZE = canvas.width / ROWS;
+    let score = 0;
+    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+
+    // Definisi Bentuk Balok
+    const SHAPES = [
+        { color: '#FF5252', data: [[1, 1], [1, 1]] }, // Square
+        { color: '#4CAF50', data: [[1, 1, 1]] },       // Line 3
+        { color: '#2196F3', data: [[1], [1], [1]] },    // Vertical 3
+        { color: '#FFEB3B', data: [[1, 0], [1, 0], [1, 1]] }, // L
+        { color: '#9C27B0', data: [[1, 1, 1], [0, 1, 0]] },    // T
+        { color: '#FF9800', data: [[1]] },             // Dot
+        { color: '#00BCD4', data: [[1, 1, 1, 1]] }     // Line 4
+    ];
+
+    let availablePieces = [null, null, null];
+    let selectedPieceIndex = null;
+
+    // Inisialisasi
+    function init() {
+        generateNewPieces();
+        drawBoard();
+    }
+
+    function generateNewPieces() {
+        for (let i = 0; i < 3; i++) {
+            const randomShape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+            availablePieces[i] = JSON.parse(JSON.stringify(randomShape));
+            drawPiecePreview(i);
+        }
+    }
+
+    function drawPiecePreview(index) {
+        const pCanvas = document.getElementById(`p${index}`);
+        const pCtx = pCanvas.getContext('2d');
+        pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+        
+        if (!availablePieces[index]) return;
+
+        const shape = availablePieces[index];
+        const blockSize = 20;
+        const offsetX = (pCanvas.width - shape.data[0].length * blockSize) / 2;
+        const offsetY = (pCanvas.height - shape.data.length * blockSize) / 2;
+
+        pCtx.fillStyle = shape.color;
+        shape.data.forEach((row, rIdx) => {
+            row.forEach((cell, cIdx) => {
+                if (cell) {
+                    pCtx.fillRect(offsetX + cIdx * blockSize, offsetY + rIdx * blockSize, blockSize - 2, blockSize - 2);
+                }
+            });
+        });
+    }
+
+    function drawBoard() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                ctx.strokeStyle = '#333';
+                ctx.strokeRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                if (grid[r][c]) {
+                    ctx.fillStyle = grid[r][c];
+                    ctx.roundRect(c * CELL_SIZE + 2, r * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4, 5);
+                    ctx.fill();
+                }
+            }
+        }
+    }
+
+    // Helper untuk menggambar rounded rect
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+    }
+
+    function canPlace(row, col, shapeData) {
+        for (let r = 0; r < shapeData.length; r++) {
+            for (let c = 0; c < shapeData[r].length; c++) {
+                if (shapeData[r][c]) {
+                    let targetR = row + r;
+                    let targetC = col + c;
+                    if (targetR >= ROWS || targetC >= COLS || grid[targetR][targetC] !== 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    function placePiece(row, col, index) {
+        const shape = availablePieces[index];
+        if (!canPlace(row, col, shape.data)) return false;
+
+        shape.data.forEach((rData, r) => {
+            rData.forEach((cell, c) => {
+                if (cell) grid[row + r][col + c] = shape.color;
+            });
+        });
+
+        availablePieces[index] = null;
+        document.getElementById(`p${index}`).getContext('2d').clearRect(0,0,100,100);
+        
+        checkAndClear();
+        
+        // Cek jika 3 potongan sudah habis
+        if (availablePieces.every(p => p === null)) {
+            generateNewPieces();
+        }
+
+        if (isGameOver()) {
+            alert("Game Over! Skor Akhir: " + score);
+            resetGame();
+        }
+
+        return true;
+    }
+
+    function checkAndClear() {
+        let rowsToClear = [];
+        let colsToClear = [];
+
+        // Check Rows
+        for (let r = 0; r < ROWS; r++) {
+            if (grid[r].every(cell => cell !== 0)) rowsToClear.push(r);
+        }
+
+        // Check Cols
+        for (let c = 0; c < COLS; c++) {
+            let full = true;
+            for (let r = 0; r < ROWS; r++) {
+                if (grid[r][c] === 0) full = false;
+            }
+            if (full) colsToClear.push(c);
+        }
+
+        rowsToClear.forEach(r => grid[r].fill(0));
+        colsToClear.forEach(c => {
+            for (let r = 0; r < ROWS; r++) grid[r][c] = 0;
+        });
+
+        if (rowsToClear.length > 0 || colsToClear.length > 0) {
+            score += (rowsToClear.length + colsToClear.length) * 100;
+            scoreDisplay.innerText = score;
+        }
+    }
+
+    function isGameOver() {
+        return !availablePieces.some((piece, idx) => {
+            if (!piece) return false;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (canPlace(r, c, piece.data)) return true;
+                }
+            }
+            return false;
+        });
+    }
+
+    function resetGame() {
+        grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        score = 0;
+        scoreDisplay.innerText = "0";
+        generateNewPieces();
+        drawBoard();
+    }
+
+    // Input Handling
+    document.querySelectorAll('.piece-canvas').forEach((pc, index) => {
+        pc.addEventListener('click', () => {
+            if (!availablePieces[index]) return;
+            selectedPieceIndex = index;
+            document.querySelectorAll('.piece-canvas').forEach(p => p.classList.remove('selected'));
+            pc.classList.add('selected');
+        });
+    });
+
+    canvas.addEventListener('click', (e) => {
+        if (selectedPieceIndex === null) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const col = Math.floor(x / CELL_SIZE);
+        const row = Math.floor(y / CELL_SIZE);
+
+        if (placePiece(row, col, selectedPieceIndex)) {
+            selectedPieceIndex = null;
+            document.querySelectorAll('.piece-canvas').forEach(p => p.classList.remove('selected'));
+            drawBoard();
+        }
+    });
+
+    init();
+</script>
+</body>
+</html>
